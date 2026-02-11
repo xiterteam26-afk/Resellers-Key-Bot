@@ -1,54 +1,48 @@
 import telebot
 from telebot import types
 
+# Oyaage Token eka
 API_TOKEN = '8256549699:AAEYpBcA3GCG5ATs7A7VOjkVmaVIko9-krY'
 bot = telebot.TeleBot(API_TOKEN)
 
-# Admin details (Mewa oyaata ona widiyata wenas karanna)
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "123"
+# Login Details
+ADMIN_USER = "admin"
+ADMIN_PASS = "1234"
 
-# Danata products save karanna list ekak (Passe meka database ekakata harawamu)
+# Product List
 products = [
-    {"id": 1, "name": "Netflix 1 Month", "price": "LKR 500"},
-    {"id": 2, "name": "Youtube Premium", "price": "LKR 300"}
+    {"name": "Netflix 1 Month", "price": "Rs. 450"},
+    {"name": "Youtube Premium", "price": "Rs. 250"}
 ]
 
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    itembtn1 = types.KeyboardButton('🛒 View Products')
-    itembtn2 = types.KeyboardButton('🔑 Admin Login')
-    markup.add(itembtn1, itembtn2)
-    bot.send_message(message.chat.id, "Welcome to XiterTeam Reseller Bot! \nThora ganna:", reply_markup=markup)
+def start(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("🛒 View Products", "🔑 Admin Login")
+    bot.send_message(message.chat.id, "Welcome to Reseller Bot! Thora ganna:", reply_markup=markup)
 
-@bot.message_handler(func=lambda message: message.text == '🛒 View Products')
-def show_products(message):
-    if not products:
-        bot.send_message(message.chat.id, "Danata products naha.")
-        return
-    
-    msg = "📦 **Available Products:**\n\n"
+@bot.message_handler(func=lambda m: m.text == "🛒 View Products")
+def show_prods(message):
+    text = "📦 **Products List:**\n\n"
     for p in products:
-        msg += f"ID: {p['id']} | {p['name']} - {p['price']}\n"
-    bot.send_message(message.chat.id, msg, parse_mode="Markdown")
+        text += f"🔹 {p['name']} - {p['price']}\n"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
-@bot.message_handler(func=lambda message: message.text == '🔑 Admin Login')
-def admin_login(message):
-    msg = bot.send_message(message.chat.id, "Admin Username eka danna:")
-    bot.register_next_step_handler(msg, process_username_step)
+@bot.message_handler(func=lambda m: m.text == "🔑 Admin Login")
+def login(message):
+    msg = bot.send_message(message.chat.id, "Admin Username eka gahanna:")
+    bot.register_next_step_handler(msg, get_user)
 
-def process_username_step(message):
-    if message.text == ADMIN_USERNAME:
-        msg = bot.send_message(message.chat.id, "Password eka danna:")
-        bot.register_next_step_handler(msg, process_password_step)
+def get_user(message):
+    if message.text == ADMIN_USER:
+        msg = bot.send_message(message.chat.id, "Password eka gahanna:")
+        bot.register_next_step_handler(msg, get_pass)
     else:
         bot.send_message(message.chat.id, "Username waradiy!")
 
-def process_password_step(message):
-    if message.text == ADMIN_PASSWORD:
+def get_pass(message):
+    if message.text == ADMIN_PASS:
         bot.send_message(message.chat.id, "Welcome Admin! Oyaata dan products add karanna puluwan.")
-        # Methana Admin panel eka hadanna puluwan
     else:
         bot.send_message(message.chat.id, "Password waradiy!")
 
