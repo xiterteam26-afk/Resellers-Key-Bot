@@ -10,7 +10,8 @@ server = Flask(__name__)
 def home(): return "Bot is Online!"
 
 # --- CONFIGURATION ---
-API_TOKEN = '8595603162:AAHRk4hN-txEc_uZtyEtFNxuGZ6VJ-s4X0U'
+# Oyaage aluthma token eka methana thiyanawa
+API_TOKEN = '8218026043:AAHEM3gNJDO5H_kk6z-ixGC36HwRw55OcfY'
 bot = telebot.TeleBot(API_TOKEN)
 
 # --- DATABASE ---
@@ -94,7 +95,7 @@ def complete_buy(call):
     user = logged_users.get(call.message.chat.id)
     price = products[cat][day]["price"]
     
-    if user == admin_user["user"] or resellers[user]["wallet"] >= price:
+    if user == admin_user["user"] or (user in resellers and resellers[user]["wallet"] >= price):
         if products[cat][day]["keys"]:
             key = products[cat][day]["keys"].pop(0)
             if user != admin_user["user"]: resellers[user]["wallet"] -= price
@@ -121,8 +122,16 @@ def check_wallet(message):
     elif user in resellers:
         bot.send_message(message.chat.id, f"💰 Wallet Balance: Rs. {resellers[user]['wallet']}")
 
+@bot.message_handler(func=lambda m: m.text == "🏠 Main Menu")
+def back_home(message):
+    if message.chat.id in logged_users:
+        show_main_menu(message)
+
 # --- RUNNING ---
 if __name__ == "__main__":
+    # Conflict nathi karanna parana webhooks ain karanawa
+    bot.remove_webhook()
+    
     port = int(os.environ.get("PORT", 8080))
-    threading.Thread(target=bot.infinity_polling).start()
+    threading.Thread(target=bot.infinity_polling, kwargs={'skip_pending': True}).start()
     server.run(host="0.0.0.0", port=port)
