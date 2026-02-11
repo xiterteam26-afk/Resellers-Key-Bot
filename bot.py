@@ -3,22 +3,27 @@ from telebot import types
 import os
 from flask import Flask
 import threading
+import time
 
-# --- FLASK SERVER (For Render Free Tier) ---
+# --- FLASK SERVER (Keep-Alive) ---
 server = Flask(__name__)
 @server.route("/")
 def home(): return "Bot is Online!"
 
 # --- CONFIGURATION ---
-# Oyaage aluthma token eka methana thiyanawa
 API_TOKEN = '8218026043:AAHEM3gNJDO5H_kk6z-ixGC36HwRw55OcfY'
 bot = telebot.TeleBot(API_TOKEN)
 
 # --- DATABASE ---
-admin_user = {"user": "admin", "pass": "123"}
-resellers = {"test": {"password": "123", "wallet": 5000}}
+# Initialize with your default credentials
+data = {
+    "admin": {"user": "admin", "pass": "123"},
+    "resellers": {
+        "test": {"password": "123", "wallet": 5000}
+    }
+}
 
-# Updated Price List & Days
+# Product Data
 products = {
     "Fluorite": {
         "1 Day": {"price": 750, "keys": []},
@@ -35,42 +40,42 @@ products = {
         "10 Days": {"price": 1200, "keys": []},
         "30 Days": {"price": 2400, "keys": []}
     },
-    "E sign": {
-        "1 Year": {"price": 1800, "keys": []}
-    },
-    "Niro IOS": {
-        "1 Month": {"price": 3200, "keys": []}
-    }
+    "E sign": {"1 Year": {"price": 1800, "keys": []}},
+    "Niro IOS": {"1 Month": {"price": 3200, "keys": []}}
 }
 
-logged_users = {}
+logged_users = {} # Tracks who is logged in
 
 # --- LOGIN SYSTEM ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    msg = bot.send_message(message.chat.id, "🔐 **XITER TEAM BOT**\n\nKaruṇākara Username eka danna:", parse_mode="Markdown")
+    msg = bot.send_message(message.chat.id, "🔐 **XITER TEAM OFFICIAL**\n\nPlease enter your Username:")
     bot.register_next_step_handler(msg, process_username)
 
 def process_username(message):
     username = message.text
-    msg = bot.send_message(message.chat.id, f"👤 User: {username}\nPassword eka danna:")
+    msg = bot.send_message(message.chat.id, f"👤 User: {username}\nEnter Password:")
     bot.register_next_step_handler(msg, lambda m: process_password(m, username))
 
 def process_password(message, username):
     password = message.text
-    if (username == admin_user["user"] and password == admin_user["pass"]) or \
-       (username in resellers and resellers[username]["password"] == password):
+    # Admin Check
+    if username == data["admin"]["user"] and password == data["admin"]["pass"]:
+        logged_users[message.chat.id] = "admin"
+        show_main_menu(message)
+    # Reseller Check
+    elif username in data["resellers"] and data["resellers"][username]["password"] == password:
         logged_users[message.chat.id] = username
         show_main_menu(message)
     else:
-        bot.send_message(message.chat.id, "❌ Login Failed! /start karanna.")
+        bot.send_message(message.chat.id, "❌ Login Failed! Invalid credentials. Type /start to retry.")
 
 def show_main_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🛒 Shop Products", "📊 My Wallet")
-    if logged_users.get(message.chat.id) == admin_user["user"]:
+    if logged_users.get(message.chat.id) == "admin":
         markup.add("⚙️ Admin Panel")
-    bot.send_message(message.chat.id, "✅ Welcome back!", reply_markup=markup)
+    bot.send_message(message.chat.id, "✅ Access Granted. Welcome to XITER TEAM.", reply_markup=markup)
 
 # --- SHOP LOGIC ---
 @bot.message_handler(func=lambda m: m.text == "🛒 Shop Products")
@@ -79,14 +84,14 @@ def shop_categories(message):
     markup = types.InlineKeyboardMarkup()
     for cat in products.keys():
         markup.add(types.InlineKeyboardButton(cat, callback_data=f"cat_{cat}"))
-    bot.send_message(message.chat.id, "📦 Select Product Category:", reply_markup=markup)
+    bot.send_message(message.chat.id, "📦 Select Category:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("cat_"))
 def shop_days(call):
     cat = call.data.replace("cat_", "")
     markup = types.InlineKeyboardMarkup()
-    for day, data in products[cat].items():
-        markup.add(types.InlineKeyboardButton(f"{day} - Rs.{data['price']}", callback_data=f"buy_{cat}_{day}"))
+    for day, info in products[cat].items():
+        markup.add(types.InlineKeyboardButton(f"{day} - Rs.{info['price']}", callback_data=f"buy_{cat}_{day}"))
     bot.edit_message_text(f"💎 {cat} - Select Duration:", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
@@ -95,43 +100,57 @@ def complete_buy(call):
     user = logged_users.get(call.message.chat.id)
     price = products[cat][day]["price"]
     
-    if user == admin_user["user"] or (user in resellers and resellers[user]["wallet"] >= price):
+    if user == "admin" or (user in data["resellers"] and data["resellers"][user]["wallet"] >= price):
         if products[cat][day]["keys"]:
             key = products[cat][day]["keys"].pop(0)
-            if user != admin_user["user"]: resellers[user]["wallet"] -= price
-            bot.send_message(call.message.chat.id, f"✅ Purchase Success!\n🎁 {cat} {day}\n🔑 Key: `{key}`", parse_mode="Markdown")
+            if user != "admin": data["resellers"][user]["wallet"] -= price
+            bot.send_message(call.message.chat.id, f"✅ Success!\n🎁 {cat} ({day})\n🔑 Key: `{key}`", parse_mode="Markdown")
         else:
             bot.answer_callback_query(call.id, "❌ Out of Stock!")
     else:
-        bot.answer_callback_query(call.id, f"❌ Salli madiy! Price: Rs.{price}")
+        bot.answer_callback_query(call.id, f"❌ Insufficient Balance! (Price: Rs.{price})")
 
 # --- ADMIN PANEL ---
 @bot.message_handler(func=lambda m: m.text == "⚙️ Admin Panel")
 def admin_panel(message):
-    if logged_users.get(message.chat.id) != admin_user["user"]: return
+    if logged_users.get(message.chat.id) != "admin": return
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("➕ Add Reseller", "💰 Add Money")
-    markup.add("📥 Add Stock", "🏠 Main Menu")
-    bot.send_message(message.chat.id, "🛠 **ADMIN CONTROL CENTER**", reply_markup=markup, parse_mode="Markdown")
+    markup.add("📥 Add Stock", "💰 Add Money")
+    markup.add("➕ Add Reseller", "➖ Remove Reseller")
+    markup.add("🔑 Change Admin Login", "🏠 Main Menu")
+    bot.send_message(message.chat.id, "🛠 **ADMIN CONTROL CENTER**", reply_markup=markup)
+
+# Admin Credential Change
+@bot.message_handler(func=lambda m: m.text == "🔑 Change Admin Login")
+def change_admin_start(message):
+    msg = bot.send_message(message.chat.id, "Enter NEW Admin Username:")
+    bot.register_next_step_handler(msg, change_admin_user)
+
+def change_admin_user(message):
+    new_user = message.text
+    msg = bot.send_message(message.chat.id, f"New User: {new_user}\nEnter NEW Admin Password:")
+    bot.register_next_step_handler(msg, lambda m: change_admin_final(m, new_user))
+
+def change_admin_final(message, new_user):
+    data["admin"]["user"] = new_user
+    data["admin"]["pass"] = message.text
+    bot.send_message(message.chat.id, "✅ Admin credentials updated successfully!")
 
 @bot.message_handler(func=lambda m: m.text == "📊 My Wallet")
 def check_wallet(message):
     user = logged_users.get(message.chat.id)
-    if user == admin_user["user"]:
-        bot.send_message(message.chat.id, "💰 Wallet: ∞ (Admin)")
-    elif user in resellers:
-        bot.send_message(message.chat.id, f"💰 Wallet Balance: Rs. {resellers[user]['wallet']}")
+    if user == "admin":
+        bot.send_message(message.chat.id, "💰 Wallet: Unlimited (Admin)")
+    else:
+        bal = data["resellers"][user]["wallet"]
+        bot.send_message(message.chat.id, f"💰 Your Balance: Rs. {bal}")
 
-@bot.message_handler(func=lambda m: m.text == "🏠 Main Menu")
-def back_home(message):
-    if message.chat.id in logged_users:
-        show_main_menu(message)
-
-# --- RUNNING ---
+# --- STARTUP ---
 if __name__ == "__main__":
-    # Conflict nathi karanna parana webhooks ain karanawa
+    # Fix for 409 Conflict: Clear previous session
     bot.remove_webhook()
+    time.sleep(1)
     
     port = int(os.environ.get("PORT", 8080))
-    threading.Thread(target=bot.infinity_polling, kwargs={'skip_pending': True}).start()
+    threading.Thread(target=lambda: bot.infinity_polling(skip_pending=True)).start()
     server.run(host="0.0.0.0", port=port)
