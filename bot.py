@@ -5,7 +5,7 @@ from flask import Flask
 import threading
 import time
 
-# --- FLASK SERVER (For Render Keep-Alive) ---
+# --- FLASK SERVER (Render ekata) ---
 server = Flask(__name__)
 @server.route("/")
 def home(): return "XITER TEAM BOT IS ONLINE"
@@ -29,20 +29,27 @@ products = {
     "E sign": {"1 Year": 1800},
     "Niro IOS": {"1 Month": 3200}
 }
-# Inventory to store keys
 keys_db = {p: {d: [] for d in products[p]} for p in products}
 
-logged_users = {}
+# Logged users check karanna
+logged_users = {} 
+
+# --- LOGIN CHECKER FUNCTION ---
+def check_session(message):
+    if message.chat.id in logged_users:
+        return True
+    bot.send_message(message.chat.id, "⚠️ **Session Expired!**\nKaruṇākara ayeth /start gahalā login wenna.")
+    return False
 
 # --- START & LOGIN ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    msg = bot.send_message(message.chat.id, "🔐 **XITER TEAM OFFICIAL**\n\nEnter Username:")
+    msg = bot.send_message(message.chat.id, "🔐 **XITER TEAM OFFICIAL**\n\nUsername eka danna:")
     bot.register_next_step_handler(msg, process_username)
 
 def process_username(message):
     username = message.text
-    msg = bot.send_message(message.chat.id, "🔒 Enter Password:")
+    msg = bot.send_message(message.chat.id, "🔒 Password eka danna:")
     bot.register_next_step_handler(msg, lambda m: process_password(m, username))
 
 def process_password(message, username):
@@ -54,110 +61,60 @@ def process_password(message, username):
         logged_users[message.chat.id] = username
         show_main_menu(message)
     else:
-        bot.send_message(message.chat.id, "❌ Login Failed! Type /start to retry.")
+        bot.send_message(message.chat.id, "❌ Login Failed! Username ho Password waradi.")
 
 def show_main_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🛒 Shop Products", "📊 My Wallet")
     if logged_users.get(message.chat.id) == "admin":
         markup.add("⚙️ Admin Panel")
-    bot.send_message(message.chat.id, "✅ Welcome! Choose an option:", reply_markup=markup)
+    bot.send_message(message.chat.id, "✅ Login una! Pahala buttons pawaichchi karanna.", reply_markup=markup)
+
+# --- WALLET BUTTON ---
+@bot.message_handler(func=lambda m: m.text == "📊 My Wallet")
+def check_wallet(message):
+    if not check_session(message): return
+    
+    user = logged_users[message.chat.id]
+    if user == "admin":
+        bot.send_message(message.chat.id, "💰 Wallet: Unlimited (Admin)")
+    else:
+        balance = data["resellers"][user]["wallet"]
+        bot.send_message(message.chat.id, f"💰 Oyaage Balance eka: Rs. {balance}")
+
+# --- SHOP BUTTON ---
+@bot.message_handler(func=lambda m: m.text == "🛒 Shop Products")
+def shop_categories(message):
+    if not check_session(message): return
+    
+    markup = types.InlineKeyboardMarkup()
+    for cat in products.keys():
+        markup.add(types.InlineKeyboardButton(cat, callback_data=f"cat_{cat}"))
+    bot.send_message(message.chat.id, "📦 Category ekak thoranna:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("cat_"))
+def shop_days(call):
+    cat = call.data.replace("cat_", "")
+    markup = types.InlineKeyboardMarkup()
+    for day, price in products[cat].items():
+        markup.add(types.InlineKeyboardButton(f"{day} - Rs.{price}", callback_data=f"buy_{cat}_{day}"))
+    bot.edit_message_text(f"💎 {cat} - Kalaya thoranna:", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 # --- ADMIN PANEL ---
 @bot.message_handler(func=lambda m: m.text == "⚙️ Admin Panel")
 def admin_panel(message):
-    if logged_users.get(message.chat.id) != "admin": return
+    if not check_session(message): return
+    if logged_users[message.chat.id] != "admin": return
+    
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📥 Add Stock", "💰 Add Money")
-    markup.add("➕ Add Reseller", "➖ Remove Reseller")
-    markup.add("🔑 Change Admin Login", "🏠 Main Menu")
-    bot.send_message(message.chat.id, "🛠 **ADMIN CONTROL CENTER**", reply_markup=markup)
-
-# 1. ADD RESELLER
-@bot.message_handler(func=lambda m: m.text == "➕ Add Reseller")
-def add_reseller_start(message):
-    if logged_users.get(message.chat.id) != "admin": return
-    msg = bot.send_message(message.chat.id, "Enter NEW Reseller Username:")
-    bot.register_next_step_handler(msg, add_reseller_pass)
-
-def add_reseller_pass(message):
-    new_user = message.text
-    msg = bot.send_message(message.chat.id, f"Set Password for {new_user}:")
-    bot.register_next_step_handler(msg, lambda m: add_reseller_final(m, new_user))
-
-def add_reseller_final(message, new_user):
-    data["resellers"][new_user] = {"password": message.text, "wallet": 0}
-    bot.send_message(message.chat.id, f"✅ Reseller '{new_user}' added successfully!")
-
-# 2. REMOVE RESELLER
-@bot.message_handler(func=lambda m: m.text == "➖ Remove Reseller")
-def remove_reseller_start(message):
-    if logged_users.get(message.chat.id) != "admin": return
-    msg = bot.send_message(message.chat.id, "Enter Reseller Username to REMOVE:")
-    bot.register_next_step_handler(msg, remove_reseller_final)
-
-def remove_reseller_final(message):
-    user = message.text
-    if user in data["resellers"]:
-        del data["resellers"][user]
-        bot.send_message(message.chat.id, f"✅ Reseller '{user}' removed!")
-    else:
-        bot.send_message(message.chat.id, "❌ Reseller not found!")
-
-# 3. ADD MONEY
-@bot.message_handler(func=lambda m: m.text == "💰 Add Money")
-def add_money_start(message):
-    if logged_users.get(message.chat.id) != "admin": return
-    msg = bot.send_message(message.chat.id, "Enter Reseller Username:")
-    bot.register_next_step_handler(msg, add_money_amount)
-
-def add_money_amount(message):
-    res_user = message.text
-    if res_user in data["resellers"]:
-        msg = bot.send_message(message.chat.id, f"Enter amount to add for {res_user}:")
-        bot.register_next_step_handler(msg, lambda m: add_money_final(m, res_user))
-    else:
-        bot.send_message(message.chat.id, "❌ User not found!")
-
-def add_money_final(message, res_user):
-    try:
-        amount = int(message.text)
-        data["resellers"][res_user]["wallet"] += amount
-        bot.send_message(message.chat.id, f"✅ Added Rs.{amount}. New Balance: Rs.{data['resellers'][res_user]['wallet']}")
-    except:
-        bot.send_message(message.chat.id, "❌ Invalid number!")
-
-# 4. ADD STOCK (KEYS)
-@bot.message_handler(func=lambda m: m.text == "📥 Add Stock")
-def add_stock_cat(message):
-    if logged_users.get(message.chat.id) != "admin": return
-    markup = types.InlineKeyboardMarkup()
-    for cat in products.keys():
-        markup.add(types.InlineKeyboardButton(cat, callback_data=f"as_{cat}"))
-    bot.send_message(message.chat.id, "Select Category to add keys:", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("as_"))
-def add_stock_days(call):
-    cat = call.data.replace("as_", "")
-    markup = types.InlineKeyboardMarkup()
-    for day in products[cat].keys():
-        markup.add(types.InlineKeyboardButton(day, callback_data=f"askey_{cat}_{day}"))
-    bot.edit_message_text(f"Select Duration for {cat}:", call.message.chat.id, call.message.message_id, reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("askey_"))
-def add_stock_final_step(call):
-    _, cat, day = call.data.split("_")
-    msg = bot.send_message(call.message.chat.id, f"Send keys for {cat} {day} (One key per line):")
-    bot.register_next_step_handler(msg, lambda m: save_keys(m, cat, day))
-
-def save_keys(message, cat, day):
-    new_keys = message.text.split('\n')
-    keys_db[cat][day].extend(new_keys)
-    bot.send_message(message.chat.id, f"✅ Successfully added {len(new_keys)} keys to {cat} {day}!")
+    markup.add("➕ Add Reseller", "🔑 Change Admin Login")
+    markup.add("🏠 Main Menu")
+    bot.send_message(message.chat.id, "🛠 **ADMIN PANEL**", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🏠 Main Menu")
-def go_home(message):
-    if message.chat.id in logged_users: show_main_menu(message)
+def back_home(message):
+    if check_session(message): show_main_menu(message)
 
 # --- RUN ---
 if __name__ == "__main__":
