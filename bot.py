@@ -1,15 +1,24 @@
 import telebot
 from telebot import types
+import os
+from flask import Flask
+import threading
 
-# --- API TOKEN SETUP ---
-API_TOKEN = '8595603162:AAHRk4hN-txEc_uZtyEtFNxuGZ6VJ-s4X0U' # Oyaage aluthma token eka
+# --- FLASK SERVER SETUP (For Render Free Tier) ---
+server = Flask(__name__)
+
+@server.route("/")
+def home():
+    return "Bot is Running!"
+
+# --- TELEGRAM BOT SETUP ---
+API_TOKEN = '8595603162:AAHRk4hN-txEc_uZtyEtFNxuGZ6VJ-s4X0U'
 bot = telebot.TeleBot(API_TOKEN)
 
-# --- DATABASE (Static for now) ---
+# --- DATABASE (Static) ---
 # Username: admin | Password: 123
 resellers = {"admin": {"password": "123", "wallet": 5000}} 
 
-# Stocks & Prices
 stocks = {
     "Fluorite 1 Day": {"price": 750, "keys": []},
     "Fluorite 7 Days": {"price": 2100, "keys": []},
@@ -25,7 +34,7 @@ stocks = {
 }
 current_reseller = {}
 
-# --- START MENU ---
+# --- BOT COMMANDS ---
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -33,7 +42,6 @@ def start(message):
     markup.add("🛒 Shop Products")
     bot.send_message(message.chat.id, "💎 **XITER TEAM OFFICIAL RESELLER BOT** 💎\n\nLogin wela oyaage business eka start karanna!", reply_markup=markup, parse_mode="Markdown")
 
-# --- LOGIN LOGIC ---
 @bot.message_handler(func=lambda m: m.text == "🔑 Reseller Login")
 def login(message):
     msg = bot.send_message(message.chat.id, "👤 Username eka danna:")
@@ -50,11 +58,10 @@ def auth_user(message):
 def auth_pass(message, user):
     if message.text == resellers[user]["password"]:
         current_reseller[message.chat.id] = user
-        bot.send_message(message.chat.id, f"✅ Welcome {user}! Oya dan logged in.")
+        bot.send_message(message.chat.id, f"✅ Welcome {user}!")
     else:
         bot.send_message(message.chat.id, "❌ Password waradiy!")
 
-# --- SHOP & WALLET ---
 @bot.message_handler(func=lambda m: m.text == "📊 My Wallet")
 def check_wallet(message):
     user = current_reseller.get(message.chat.id)
@@ -62,7 +69,7 @@ def check_wallet(message):
         bal = resellers[user]["wallet"]
         bot.send_message(message.chat.id, f"💰 Wallet Balance: Rs. {bal}")
     else:
-        bot.send_message(message.chat.id, "⚠️ Palamuwanma Login wenna.")
+        bot.send_message(message.chat.id, "⚠️ Login wenna!")
 
 @bot.message_handler(func=lambda m: m.text == "🛒 Shop Products")
 def shop(message):
@@ -82,22 +89,23 @@ def buy_item(call):
     price = stocks[item]["price"]
     if resellers[user]["wallet"] >= price:
         if stocks[item]["keys"]:
-            key = stocks[item]["keys"].pop(0)
+            key = stocks[item].get("keys").pop(0)
             resellers[user]["wallet"] -= price
-            bot.send_message(call.message.chat.id, f"✅ Done!\n🎁 Key: `{key}`", parse_mode="Markdown")
+            bot.send_message(call.message.chat.id, f"✅ Success!\n🎁 {item} Key: `{key}`", parse_mode="Markdown")
         else:
             bot.answer_callback_query(call.id, "❌ Out of Stock!")
     else:
         bot.answer_callback_query(call.id, "❌ Salli madiy!")
 
-# --- SECRET ADMIN PANEL (/admin123) ---
+# --- SECRET ADMIN PANEL ---
 @bot.message_handler(commands=['admin123'])
 def admin(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📥 Add Stock", "🏠 Main Menu")
     bot.send_message(message.chat.id, "⚙️ ADMIN PANEL ACTIVE", reply_markup=markup)
 
-@bot.message_handler(func=lambda m: m.text == "🏠 Main Menu")
-def main_m(message): start(message)
-
-bot.infinity_polling()
+# --- RUN BOT ---
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    threading.Thread(target=bot.infinity_polling).start()
+    server.run(host="0.0.0.0", port=port)
